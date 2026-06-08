@@ -95,13 +95,3 @@ Formato de salida: texto plano con bloque por partido. Cada bloque incluye conte
 **Email** — asunto dinámico con los equipos y la fecha. Cuerpo = contenido del TXT. Adjunto = `partidos.txt`.
 
 ---
-
-## Debug (celda 6)
-
-Itera sobre `result["messages"]` y muestra tipo de mensaje, tools llamadas y preview del contenido. Útil para verificar que `write_matches_txt` y `send_email_with_file` se ejecutaron.
-
----
-
-## Scheduler (celda 7)
-
-Usa `schedule` para ejecutar el agente cada día a las 08:00. Mantiene el proceso vivo con un bucle `while True` con `time.sleep(30)`. Para producción se recomienda sustituirlo por un cron del sistema o Azure Functions con timer trigger.
