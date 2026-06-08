@@ -7,7 +7,7 @@ Agente LangGraph que busca los partidos del Mundial 2026, genera un análisis de
 ## Flujo general
  
 ```
-        08:00 (scheduler)
+             start
                │
                ▼
          ┌─────────────┐        - - - - - - - - - - - -
