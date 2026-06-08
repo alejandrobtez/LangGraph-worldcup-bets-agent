@@ -1,6 +1,6 @@
 # worldcup_bets_agent
 
-Agente LangGraph que cada día a las 08:00 busca los partidos del Mundial 2026, genera un análisis de apuestas por partido y lo envía por email como TXT.
+Agente LangGraph que busca los partidos del Mundial 2026, genera un análisis de apuestas por partido y lo envía por email como TXT.
 
 ---
 
