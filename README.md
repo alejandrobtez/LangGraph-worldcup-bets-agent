@@ -5,14 +5,35 @@ Agente LangGraph que busca los partidos del Mundial 2026, genera un análisis de
 ---
 
 ## Flujo general
-
+ 
 ```
-Usuario
-  │
-  ▼
-[nodo: agent] ──tool_calls?──▶ [nodo: tools] ──resultado──▶ [nodo: agent]
-  │
-  └── sin tool_calls ──▶ END
+        08:00 (scheduler)
+               │
+               ▼
+         ┌─────────────┐        - - - - - - - - - - - -
+         │   AI AGENT  │ - - -> │ tool: get_matches    │
+         │             │ <----- │ tool: get_next       │
+         └─────────────┘        │ tool: get_team_form  │
+               │                 - - - - - - - - - - - -
+               ▼
+          ¿hay partidos?
+          /            \
+        sí              no (skip)
+        │                    │
+        ▼                    ▼
+  ┌───────────┐           [END]
+  │escribir   │
+  │   TXT     │
+  └───────────┘
+        │
+        ▼
+  ┌───────────────┐
+  │generar fichero│
+  │ + enviar email│
+  └───────────────┘
+        │
+        ▼
+      [END]
 ```
 
 El grafo arranca en `agent`, el LLM decide qué tool llamar, `tools` la ejecuta y devuelve el resultado, y el ciclo se repite hasta que el LLM termina sin llamar a ninguna tool.
