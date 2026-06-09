@@ -2,41 +2,49 @@
 
 Agente LangGraph que busca los partidos del Mundial 2026, genera un análisis de apuestas por partido y lo envía por email como TXT.
 
+---cada día a las 08:00 
+
+## Stack
+
+| Componente | Uso |
+|---|---|
+| Azure OpenAI (gpt-4o-mini) | LLM del agente |
+| LangGraph | Orquestación del grafo de nodos |
+| Tavily | Búsqueda web en tiempo real |
+| Gmail SMTP | Envío del email |
+
 ---
 
 ## Flujo general
- 
+
 ```
-             start
+        08:00 (scheduler)
                │
                ▼
          ┌─────────────┐        - - - - - - - - - - - -
-         │   AI AGENT  │ - - -> │ tool: get_matches    │
+         │  node_agent │ - - -> │ tool: get_matches    │
          │             │ <----- │ tool: get_next       │
          └─────────────┘        │ tool: get_team_form  │
                │                 - - - - - - - - - - - -
+               │ (sin tool_calls)
                ▼
-          ¿hay partidos?
-          /            \
-        sí              no (skip)
-        │                    │
-        ▼                    ▼
-  ┌───────────┐           [END]
-  │escribir   │
-  │   TXT     │
-  └───────────┘
-        │
-        ▼
-  ┌───────────────┐
-  │generar fichero│
-  │ + enviar email│
-  └───────────────┘
-        │
-        ▼
-      [END]
+         ┌──────────────────┐
+         │ node_human_review│  <- PAUSA — el grafo se congela aqui
+         │  (interrupt)     │     muestra partidos.txt por pantalla
+         └──────────────────┘
+               │
+        aprueba / rechaza
+               │
+               ▼
+         ┌───────────┐
+         │ node_send │  -> envia email si approved=True
+         └───────────┘  -> cancela si approved=False
+               │
+               ▼
+             [END]
 ```
 
-El grafo arranca en `agent`, el LLM decide qué tool llamar, `tools` la ejecuta y devuelve el resultado, y el ciclo se repite hasta que el LLM termina sin llamar a ninguna tool.
+El grafo arranca en `node_agent`. El LLM llama tools en bucle hasta completar el análisis y escribir el TXT. El grafo se pausa en `human_review`. El humano lee el análisis y decide si enviar. El grafo se reanuda con la decisión.
 
 ---
 
@@ -46,33 +54,7 @@ El grafo arranca en `agent`, el LLM decide qué tool llamar, `tools` la ejecuta 
 |---|---|
 | `AZURE_OPENAI_ENDPOINT` | Foundry → Overview → endpoint |
 | `AZURE_OPENAI_API_KEY` | Foundry → Overview → Keys → Key 1 |
-| `AZURE_OPENAI_DEPLOYMENT` | Foundry → Models + Endpoints → nombre del depl---
- 
-## Human in the Loop (celdas 5 y 6)
- 
-El motivo de meterlo entre `write_matches_txt` y `send_email_with_file` es evitar enviar un análisis incorrecto. El agente puede alucinar partidos o datos — con la pausa tienes control total antes de que salga el email.
- 
-**Cómo funciona:**
- 
-`MemorySaver` serializa el estado completo del grafo (mensajes, historial de tools, campos del estado) en memoria, identificado por `thread_id`. Cuando el grafo llega al `interrupt_before`, se congela y devuelve el control al notebook.
- 
-La celda 6 reanuda el grafo con `graph.invoke({"approved": True/False}, config=config)`. LangGraph recupera el estado del checkpoint por `thread_id`, inyecta el nuevo valor de `approved` y continúa desde `node_human_review` hacia `node_send`.
- 
-```
-Celda 5                              Celda 6
-   │                                    │
-graph.invoke(messages, approved=False)  graph.invoke({"approved": True})
-   │                                    │
-[agent] → [tools] → ...        [human_review] → [send] → END
-   │
-PAUSA (interrupt_before)
-```
- 
-El `thread_id` en el scheduler cambia cada día (`mundial_YYYY-MM-DD`) para que cada ejecución diaria tenga su propio checkpoint independiente.
- 
----
- 
-oyment |
+| `AZURE_OPENAI_DEPLOYMENT` | Foundry → Models + Endpoints → nombre del deployment |
 | `AZURE_OPENAI_API_VERSION` | Usar `2024-02-15-preview` |
 | `TAVILY_API_KEY` | https://app.tavily.com → API Keys |
 | `EMAIL_FROM` | Tu cuenta Gmail |
@@ -109,44 +91,51 @@ Prepende el system prompt a los mensajes del estado y llama al LLM con las tools
 Lee los `tool_calls` del último mensaje del LLM, ejecuta cada tool contra `TOOLS_BY_NAME` e imprime `[nodo: tools] → nombre(args)` por cada llamada. Devuelve los `ToolMessage` al estado para que el LLM los vea en la siguiente vuelta.
 
 ### `should_continue`
-Función de routing. Si el último mensaje del LLM tiene `tool_calls` devuelve `"tools"`, si no devuelve `END`. Es el único punto de decisión del grafo.
+Función de routing. Si el último mensaje del LLM tiene `tool_calls` devuelve `"tools"`. Si no tiene tool_calls, el agente terminó el análisis y devuelve `"human_review"` para pausar el grafo.
+
+### `node_human_review`
+Nodo de pausa. Abre `partidos.txt` y lo imprime por pantalla. El grafo no ejecuta este nodo directamente — el `interrupt_before=["human_review"]` en el `compile()` congela el grafo **antes** de entrar al nodo, preservando todo el estado en memoria via `MemorySaver`.
+
+### `node_send`
+Lee el campo `approved` del estado. Si es `True` llama a `send_email_with_file` y envía el email. Si es `False` cancela sin enviar nada.
 
 ---
- 
+
 ## Human in the Loop (celdas 5 y 6)
- 
+
 El motivo de meterlo entre `write_matches_txt` y `send_email_with_file` es evitar enviar un análisis incorrecto. El agente puede alucinar partidos o datos — con la pausa tienes control total antes de que salga el email.
- 
+
 **Cómo funciona:**
- 
+
 `MemorySaver` serializa el estado completo del grafo (mensajes, historial de tools, campos del estado) en memoria, identificado por `thread_id`. Cuando el grafo llega al `interrupt_before`, se congela y devuelve el control al notebook.
- 
+
 La celda 6 reanuda el grafo con `graph.invoke({"approved": True/False}, config=config)`. LangGraph recupera el estado del checkpoint por `thread_id`, inyecta el nuevo valor de `approved` y continúa desde `node_human_review` hacia `node_send`.
- 
+
 ```
-Celda 5                                         Celda 6
-   │                                               │
+Celda 5                              Celda 6
+   │                                    │
 graph.invoke(messages, approved=False)  graph.invoke({"approved": True})
-   │                                               │
-[agent] → [tools] → ...                  [human_review] → [send] → END
+   │                                    │
+[agent] → [tools] → ...        [human_review] → [send] → END
    │
 PAUSA (interrupt_before)
 ```
- 
-El `thread_id` en el scheduler cambia cada día (`mundial_YYYY-MM-DD`) para que cada ejecución diaria tenga su propio checkpoint independiente.
- 
----
- 
 
+El `thread_id` en el scheduler cambia cada día (`mundial_YYYY-MM-DD`) para que cada ejecución diaria tenga su propio checkpoint independiente.
+
+---
 
 ## Estado del grafo
 
 ```python
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    approved: bool
 ```
 
-Lista acumulativa de mensajes. `add_messages` hace que cada nodo añada al historial en lugar de sobreescribirlo. El LLM ve todo el historial en cada vuelta.
+`messages` es acumulativo — `add_messages` hace que cada nodo añada al historial en lugar de sobreescribirlo. El LLM ve todo el historial en cada vuelta.
+
+`approved` es la decisión del humano — se inyecta en la segunda invocación del grafo para que `node_send` sepa si enviar o cancelar.
 
 ---
 
@@ -166,5 +155,3 @@ Formato de salida: texto plano con bloque por partido. Cada bloque incluye conte
 **`partidos.txt`** — análisis completo, un bloque por partido, texto plano.
 
 **Email** — asunto dinámico con los equipos y la fecha. Cuerpo = contenido del TXT. Adjunto = `partidos.txt`.
-
----
