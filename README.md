@@ -46,7 +46,33 @@ El grafo arranca en `agent`, el LLM decide qué tool llamar, `tools` la ejecuta 
 |---|---|
 | `AZURE_OPENAI_ENDPOINT` | Foundry → Overview → endpoint |
 | `AZURE_OPENAI_API_KEY` | Foundry → Overview → Keys → Key 1 |
-| `AZURE_OPENAI_DEPLOYMENT` | Foundry → Models + Endpoints → nombre del deployment |
+| `AZURE_OPENAI_DEPLOYMENT` | Foundry → Models + Endpoints → nombre del depl---
+ 
+## Human in the Loop (celdas 5 y 6)
+ 
+El motivo de meterlo entre `write_matches_txt` y `send_email_with_file` es evitar enviar un análisis incorrecto. El agente puede alucinar partidos o datos — con la pausa tienes control total antes de que salga el email.
+ 
+**Cómo funciona:**
+ 
+`MemorySaver` serializa el estado completo del grafo (mensajes, historial de tools, campos del estado) en memoria, identificado por `thread_id`. Cuando el grafo llega al `interrupt_before`, se congela y devuelve el control al notebook.
+ 
+La celda 6 reanuda el grafo con `graph.invoke({"approved": True/False}, config=config)`. LangGraph recupera el estado del checkpoint por `thread_id`, inyecta el nuevo valor de `approved` y continúa desde `node_human_review` hacia `node_send`.
+ 
+```
+Celda 5                              Celda 6
+   │                                    │
+graph.invoke(messages, approved=False)  graph.invoke({"approved": True})
+   │                                    │
+[agent] → [tools] → ...        [human_review] → [send] → END
+   │
+PAUSA (interrupt_before)
+```
+ 
+El `thread_id` en el scheduler cambia cada día (`mundial_YYYY-MM-DD`) para que cada ejecución diaria tenga su propio checkpoint independiente.
+ 
+---
+ 
+oyment |
 | `AZURE_OPENAI_API_VERSION` | Usar `2024-02-15-preview` |
 | `TAVILY_API_KEY` | https://app.tavily.com → API Keys |
 | `EMAIL_FROM` | Tu cuenta Gmail |
@@ -86,6 +112,32 @@ Lee los `tool_calls` del último mensaje del LLM, ejecuta cada tool contra `TOOL
 Función de routing. Si el último mensaje del LLM tiene `tool_calls` devuelve `"tools"`, si no devuelve `END`. Es el único punto de decisión del grafo.
 
 ---
+ 
+## Human in the Loop (celdas 5 y 6)
+ 
+El motivo de meterlo entre `write_matches_txt` y `send_email_with_file` es evitar enviar un análisis incorrecto. El agente puede alucinar partidos o datos — con la pausa tienes control total antes de que salga el email.
+ 
+**Cómo funciona:**
+ 
+`MemorySaver` serializa el estado completo del grafo (mensajes, historial de tools, campos del estado) en memoria, identificado por `thread_id`. Cuando el grafo llega al `interrupt_before`, se congela y devuelve el control al notebook.
+ 
+La celda 6 reanuda el grafo con `graph.invoke({"approved": True/False}, config=config)`. LangGraph recupera el estado del checkpoint por `thread_id`, inyecta el nuevo valor de `approved` y continúa desde `node_human_review` hacia `node_send`.
+ 
+```
+Celda 5                                         Celda 6
+   │                                               │
+graph.invoke(messages, approved=False)  graph.invoke({"approved": True})
+   │                                               │
+[agent] → [tools] → ...                  [human_review] → [send] → END
+   │
+PAUSA (interrupt_before)
+```
+ 
+El `thread_id` en el scheduler cambia cada día (`mundial_YYYY-MM-DD`) para que cada ejecución diaria tenga su propio checkpoint independiente.
+ 
+---
+ 
+
 
 ## Estado del grafo
 
